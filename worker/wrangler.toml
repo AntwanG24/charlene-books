@@ -1,0 +1,8 @@
+name = "charlene-books-api"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "charlene-books"
+database_id = "3486c8a1-36c9-46c9-a12e-6599661da406"

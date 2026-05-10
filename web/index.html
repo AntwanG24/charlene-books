@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Charlene's Book List 📚</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --blue-bg: #CFE2F3;
+    --green-bg: #D9EAD3;
+    --accent: #4A90D9;
+    --accent-dark: #2c6fad;
+    --pending-accent: #E67E22;
+    --zh-accent: #27AE60;
+    --danger: #e74c3c;
+    --text: #2c3e50;
+    --text-light: #7f8c8d;
+    --border: #dce1e7;
+    --bg: #f4f7fb;
+    --card: #ffffff;
+    --shadow: 0 2px 12px rgba(74,144,217,0.08);
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* ── Header ── */
+  header {
+    background: linear-gradient(135deg, #2c6fad 0%, #4A90D9 100%);
+    color: white; padding: 18px 28px;
+    display: flex; align-items: center; gap: 16px;
+    box-shadow: 0 2px 10px rgba(44,111,173,0.3);
+  }
+  header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: 0.3px; }
+  header .subtitle { font-size: 0.85rem; opacity: 0.85; margin-top: 2px; }
+  .header-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .sync-indicator { font-size: 0.8rem; opacity: 0.8; }
+
+  /* ── Tabs ── */
+  .tabs { display: flex; background: white; border-bottom: 2px solid var(--border); padding: 0 24px; gap: 4px; }
+  .tab { padding: 14px 22px; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+    border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s;
+    color: var(--text-light); border-radius: 8px 8px 0 0; }
+  .tab:hover { color: var(--accent); background: var(--bg); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--bg); }
+  .tab.tab-zh.active { color: var(--zh-accent); border-bottom-color: var(--zh-accent); }
+  .tab.tab-pending.active { color: var(--pending-accent); border-bottom-color: var(--pending-accent); }
+  .tab .count { display: inline-block; background: var(--border); color: var(--text-light);
+    border-radius: 10px; padding: 1px 7px; font-size: 0.78rem; margin-left: 6px; }
+  .tab.active .count { background: var(--accent); color: white; }
+  .tab.tab-zh.active .count { background: var(--zh-accent); }
+  .tab.tab-pending.active .count { background: var(--pending-accent); }
+
+  /* ── Main layout ── */
+  .main { display: grid; grid-template-columns: 340px 1fr; gap: 0; height: calc(100vh - 120px); }
+  .sidebar { background: white; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .content { overflow-y: auto; padding: 20px; }
+
+  /* ── Search Panel ── */
+  .search-panel { padding: 18px; border-bottom: 1px solid var(--border); }
+  .search-panel h3 { font-size: 1rem; margin-bottom: 12px; color: var(--accent); display: flex; align-items: center; gap: 6px; }
+  .search-row { display: flex; gap: 8px; }
+  .search-input { flex: 1; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 8px;
+    font-size: 0.92rem; transition: border-color 0.2s; outline: none; }
+  .search-input:focus { border-color: var(--accent); }
+  .btn { padding: 10px 18px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.88rem;
+    font-weight: 600; transition: all 0.2s; display: flex; align-items: center; gap: 5px; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: var(--accent-dark); }
+  .btn-sm { padding: 6px 12px; font-size: 0.82rem; }
+  .btn-ghost { background: rgba(255,255,255,0.15); color: white; border: 1.5px solid rgba(255,255,255,0.4); }
+  .btn-ghost:hover { background: rgba(255,255,255,0.25); }
+  .btn-danger { background: var(--danger); color: white; }
+  .btn-success { background: #27AE60; color: white; }
+  .btn-success:hover { background: #219150; }
+  .search-type { margin-top: 10px; display: flex; gap: 6px; }
+  .radio-chip { display: flex; align-items: center; gap: 4px; padding: 5px 10px;
+    border: 1.5px solid var(--border); border-radius: 20px; cursor: pointer; font-size: 0.82rem;
+    transition: all 0.2s; }
+  .radio-chip input { display: none; }
+  .radio-chip.checked { border-color: var(--accent); background: #EBF5FB; color: var(--accent); font-weight: 600; }
+
+  /* ── Search Results ── */
+  .search-results { flex: 1; overflow-y: auto; padding: 12px; }
+  .search-result-item { display: flex; gap: 10px; padding: 12px; border: 1.5px solid var(--border);
+    border-radius: 10px; cursor: pointer; transition: all 0.2s; margin-bottom: 8px; background: white; }
+  .search-result-item:hover { border-color: var(--accent); background: #EBF5FB; }
+  .search-result-item.selected { border-color: var(--accent); background: #EBF5FB; box-shadow: 0 0 0 2px rgba(74,144,217,0.15); }
+  .book-cover { width: 54px; height: 72px; object-fit: cover; border-radius: 5px; background: var(--border); flex-shrink: 0; }
+  .book-cover-placeholder { width: 54px; height: 72px; background: linear-gradient(135deg, #dce1e7, #c8d0da);
+    border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; flex-shrink: 0; }
+  .result-info { flex: 1; min-width: 0; }
+  .result-title { font-weight: 700; font-size: 0.9rem; line-height: 1.3; margin-bottom: 3px; }
+  .result-author { font-size: 0.8rem; color: var(--text-light); margin-bottom: 3px; }
+  .result-meta { font-size: 0.78rem; color: var(--text-light); }
+  .result-source { display: inline-block; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px;
+    font-weight: 600; margin-top: 4px; }
+  .source-google { background: #E8F0FE; color: #1967D2; }
+  .source-openlibrary { background: #E6F4EA; color: #188038; }
+
+  /* ── Add Form ── */
+  .add-form { padding: 18px; border-top: 1px solid var(--border); background: var(--bg); }
+  .add-form h3 { font-size: 0.95rem; margin-bottom: 12px; color: var(--accent); }
+  .selected-book-preview { display: flex; gap: 10px; padding: 10px; background: white;
+    border-radius: 8px; border: 1.5px solid var(--accent); margin-bottom: 12px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group label { font-size: 0.78rem; font-weight: 600; color: var(--text-light); }
+  .form-control { padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 7px;
+    font-size: 0.87rem; outline: none; transition: border-color 0.2s; width: 100%; }
+  .form-control:focus { border-color: var(--accent); }
+  select.form-control { background: white; }
+  .status-radios { display: flex; gap: 6px; flex-wrap: wrap; }
+  .status-chip { padding: 5px 10px; border: 1.5px solid var(--border); border-radius: 20px;
+    cursor: pointer; font-size: 0.8rem; transition: all 0.2s; }
+  .status-chip.status-registered { border-color: #9fc5e8; background: var(--blue-bg); color: #1565C0; font-weight: 600; }
+  .status-chip.status-read { border-color: #93c47d; background: var(--green-bg); color: #2E7D32; font-weight: 600; }
+  .status-chip.status-unread { border-color: var(--border); background: white; color: var(--text-light); }
+
+  /* ── Book List ── */
+  .list-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .filter-input { padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px;
+    font-size: 0.9rem; outline: none; flex: 1; min-width: 160px; }
+  .filter-input:focus { border-color: var(--accent); }
+  .status-legend { display: flex; gap: 10px; align-items: center; font-size: 0.82rem; }
+  .legend-dot { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+
+  /* ── Table ── */
+  .table-wrap { overflow-x: auto; border-radius: var(--radius); box-shadow: var(--shadow); }
+  table { width: 100%; border-collapse: collapse; background: white; font-size: 0.87rem; }
+  thead tr { background: linear-gradient(135deg, #2c6fad, #4A90D9); color: white; }
+  th { padding: 12px 14px; text-align: left; font-weight: 600; white-space: nowrap; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr.status-registered td { background: var(--blue-bg); }
+  tr.status-read td { background: var(--green-bg); }
+  tr.status-unread td { background: white; }
+  .book-thumb { width: 36px; height: 48px; object-fit: cover; border-radius: 3px; }
+  .book-thumb-ph { width: 36px; height: 48px; background: var(--border); border-radius: 3px;
+    display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+  .isbn-badge { font-family: monospace; font-size: 0.78rem; color: var(--text-light); }
+  .lexile-badge { font-size: 0.82rem; font-weight: 600; color: var(--accent); }
+  .source-tag { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 0.75rem;
+    font-weight: 600; background: var(--bg); color: var(--text-light); }
+  .month-badge { font-size: 0.82rem; }
+  .actions-cell { display: flex; gap: 5px; }
+  .btn-icon { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+    border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; transition: all 0.2s; }
+  .btn-icon:hover { transform: scale(1.1); }
+  .btn-edit { background: #EBF5FB; color: var(--accent); }
+  .btn-delete { background: #FDEDEC; color: var(--danger); }
+  .btn-move { background: #FEF9E7; color: #d68910; }
+
+  /* ── Empty / Loading ── */
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--text-light); }
+  .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+  .loading { display: flex; align-items: center; gap: 8px; color: var(--text-light); font-size: 0.9rem; padding: 12px; }
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Toast ── */
+  .toast-container { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; }
+  .toast { padding: 12px 18px; border-radius: 10px; background: #2c3e50; color: white;
+    font-size: 0.88rem; box-shadow: 0 4px 16px rgba(0,0,0,0.15); animation: slideIn 0.3s ease; }
+  .toast.success { background: #27AE60; }
+  .toast.error { background: var(--danger); }
+  @keyframes slideIn { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* ── Modal ── */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex;
+    align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
+  .modal { background: white; border-radius: var(--radius); padding: 24px; width: 90%; max-width: 520px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 18px; font-size: 1.1rem; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .section-header h2 { font-size: 1.1rem; font-weight: 700; }
+  .pending-note { font-size: 0.8rem; color: var(--text-light); font-style: italic; }
+
+  /* ── Config Banner ── */
+  .config-banner { background: #FEF3C7; border: 1.5px solid #F59E0B; border-radius: 10px;
+    padding: 14px 18px; margin-bottom: 16px; font-size: 0.9rem; }
+  .config-banner strong { color: #92400E; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c8d0da; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>📚 Charlene's Book List</h1>
+    <div class="subtitle">閱讀書單管理系統</div>
+  </div>
+  <div class="header-actions">
+    <span class="sync-indicator" id="syncIndicator"></span>
+    <button class="btn btn-ghost btn-sm" onclick="importXlsx()">📥 匯入 xlsx</button>
+    <button class="btn btn-ghost btn-sm" onclick="exportXlsx()">📤 匯出 xlsx</button>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="en" onclick="switchTab('en')">
+    🇺🇸 English <span class="count" id="cnt-en">0</span>
+  </div>
+  <div class="tab tab-zh" data-tab="zh" onclick="switchTab('zh')">
+    🇹🇼 中文書 <span class="count" id="cnt-zh">0</span>
+  </div>
+  <div class="tab tab-pending" data-tab="pending" onclick="switchTab('pending')">
+    ⏳ 待借閱 <span class="count" id="cnt-pending">0</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="search-panel">
+      <h3>🔍 搜尋新書</h3>
+      <div class="search-row">
+        <input type="text" class="search-input" id="searchInput" placeholder="輸入書名或 ISBN…" onkeydown="if(event.key==='Enter')searchBooks()">
+        <button class="btn btn-primary" onclick="searchBooks()">搜尋</button>
+      </div>
+      <div class="search-type">
+        <label class="radio-chip checked" id="chip-both">
+          <input type="radio" name="searchType" value="both" checked onchange="updateChips(this)"> 兩者
+        </label>
+        <label class="radio-chip" id="chip-google">
+          <input type="radio" name="searchType" value="google" onchange="updateChips(this)"> Google Books
+        </label>
+        <label class="radio-chip" id="chip-ol">
+          <input type="radio" name="searchType" value="openlibrary" onchange="updateChips(this)"> Open Library
+        </label>
+      </div>
+    </div>
+
+    <div class="search-results" id="searchResults">
+      <div class="empty-state">
+        <div class="icon">🔎</div>
+        <p>輸入書名開始搜尋</p>
+      </div>
+    </div>
+
+    <div class="add-form" id="addForm" style="display:none;">
+      <h3>➕ 新增到書單</h3>
+      <div class="selected-book-preview" id="selectedPreview"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>借閱月份 (YYYYMM)</label>
+          <input type="text" class="form-control" id="fReadIn" placeholder="例: 202506" maxlength="6">
+        </div>
+        <div class="form-group">
+          <label>書本來源</label>
+          <input type="text" class="form-control" id="fFoundAt" placeholder="TPML / Chingshin…">
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label>加入清單</label>
+        <div id="targetTabRow" class="status-radios"></div>
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label>閱讀狀態</label>
+        <div class="status-radios" id="statusRadios">
+          <div class="status-chip status-registered" onclick="selectStatus('registered',this)">✅ 已登記</div>
+          <div class="status-chip status-read" onclick="selectStatus('read',this)">📗 已讀未登記</div>
+          <div class="status-chip status-unread" onclick="selectStatus('unread',this)" style="box-shadow:0 0 0 3px rgba(74,144,217,0.35);">📘 未讀</div>
+        </div>
+      </div>
+      <button class="btn btn-success" style="width:100%;" onclick="addBook()">✅ 確認新增</button>
+    </div>
+  </div>
+
+  <div class="content">
+    <div id="configBanner" style="display:none;" class="config-banner">
+      ⚠️ <strong>尚未設定 API 網址。</strong>
+      請按右上角「⚙️ 設定」輸入您的 Worker 網址後即可使用。
+    </div>
+    <div class="section-header">
+      <h2 id="listTitle">🇺🇸 英文書清單</h2>
+      <div class="status-legend">
+        <span class="legend-dot" style="background:var(--blue-bg);border:1px solid #9fc5e8;"></span>已登記
+        <span class="legend-dot" style="background:var(--green-bg);border:1px solid #93c47d;"></span>已讀未登記
+        <span class="legend-dot" style="background:white;border:1px solid var(--border);"></span>未讀
+      </div>
+    </div>
+    <div class="list-toolbar">
+      <input type="text" class="filter-input" id="filterInput" placeholder="🔍 篩選書名 / 作者 / 來源…" oninput="renderList()">
+      <button class="btn btn-sm" style="background:var(--bg);border:1.5px solid var(--border);color:var(--text);" onclick="loadBooks()">🔄 重新整理</button>
+    </div>
+    <div class="table-wrap" id="tableWrap">
+      <div class="empty-state"><div class="icon">⏳</div><p>載入中…</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="editModal" style="display:none;">
+  <div class="modal">
+    <h3>✏️ 編輯書目資料</h3>
+    <div class="form-row">
+      <div class="form-group"><label>書名</label><input type="text" class="form-control" id="editTitle"></div>
+      <div class="form-group"><label>系列</label><input type="text" class="form-control" id="editSeries"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>作者</label><input type="text" class="form-control" id="editAuthor"></div>
+      <div class="form-group"><label>出版社</label><input type="text" class="form-control" id="editPublisher"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>ISBN-13</label><input type="text" class="form-control" id="editIsbn"></div>
+      <div class="form-group"><label>頁數</label><input type="number" class="form-control" id="editPages"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Lexile (英文書)</label><input type="text" class="form-control" id="editLexile" placeholder="例: AD480L"></div>
+      <div class="form-group"><label>借閱月份 (YYYYMM)</label><input type="text" class="form-control" id="editReadIn"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>書本來源</label><input type="text" class="form-control" id="editFoundAt"></div>
+      <div class="form-group">
+        <label>閱讀狀態</label>
+        <select class="form-control" id="editStatus">
+          <option value="registered">✅ 已登記 (藍色)</option>
+          <option value="read">📗 已讀未登記 (綠色)</option>
+          <option value="unread">📘 未讀</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:4px;">
+      <label>待借閱備註</label>
+      <input type="text" class="form-control" id="editNote" placeholder="僅 pending 清單適用">
+    </div>
+    <div class="form-group" style="margin-top:4px;">
+      <label>移動到清單</label>
+      <select class="form-control" id="editTab">
+        <option value="en">🇺🇸 英文書</option>
+        <option value="zh">🇹🇼 中文書</option>
+        <option value="pending">⏳ 待借閱</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" style="background:var(--bg);border:1.5px solid var(--border);" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveEdit()">💾 儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Config Modal -->
+<div class="modal-overlay" id="configModal" style="display:none;">
+  <div class="modal">
+    <h3>⚙️ API 設定</h3>
+    <p style="font-size:0.88rem;color:var(--text-light);margin-bottom:14px;">
+      請輸入您的 Cloudflare Worker 網址，例如：<br>
+      <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">https://charlene-books-api.yourname.workers.dev</code>
+    </p>
+    <div class="form-group">
+      <label>Worker API 網址</label>
+      <input type="url" class="form-control" id="configApiUrl" placeholder="https://charlene-books-api.yourname.workers.dev">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" style="background:var(--bg);border:1.5px solid var(--border);" onclick="closeConfigModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveConfig()">儲存並連線</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="xlsxInput" accept=".xlsx,.xls" style="display:none" onchange="handleXlsxImport(event)">
+
+<script>
+// ══════════════════════════════════════════════════════════════
+//  Config (API URL stored in localStorage)
+// ══════════════════════════════════════════════════════════════
+// NOTE: We use localStorage here only for configuration (API URL),
+// not for book data. Book data lives in Cloudflare D1.
+let API_URL = localStorage.getItem('cf_api_url') || '';
+
+function openConfigModal() {
+  document.getElementById('configApiUrl').value = API_URL;
+  document.getElementById('configModal').style.display = 'flex';
+}
+function closeConfigModal() {
+  document.getElementById('configModal').style.display = 'none';
+}
+async function saveConfig() {
+  const url = document.getElementById('configApiUrl').value.trim().replace(/\/$/, '');
+  if (!url) { toast('請輸入網址', 'error'); return; }
+  try {
+    const r = await fetch(url + '/api/books?tab=en');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    API_URL = url;
+    localStorage.setItem('cf_api_url', url);
+    closeConfigModal();
+    document.getElementById('configBanner').style.display = 'none';
+    toast('連線成功！', 'success');
+    await loadBooks();
+  } catch(e) {
+    toast('連線失敗：' + e.message + '。請確認網址是否正確。', 'error');
+  }
+}
+
+// Add config button to header dynamically
+document.querySelector('.header-actions').insertAdjacentHTML('afterbegin',
+  `<button class="btn btn-ghost btn-sm" onclick="openConfigModal()">⚙️ 設定</button>`);
+
+// ══════════════════════════════════════════════════════════════
+//  State
+// ══════════════════════════════════════════════════════════════
+let books = { en: [], zh: [], pending: [] };
+let currentTab = 'en';
+let selectedBook = null;
+let selectedStatus = 'unread';
+let selectedTargetTab = 'en';
+let editingBook = null;
+
+// ══════════════════════════════════════════════════════════════
+//  API helpers
+// ══════════════════════════════════════════════════════════════
+async function apiFetch(path, options = {}) {
+  if (!API_URL) throw new Error('尚未設定 API 網址');
+  const r = await fetch(API_URL + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (!r.ok) throw new Error('API 錯誤 ' + r.status);
+  return r.json();
+}
+
+function setSyncing(msg) {
+  document.getElementById('syncIndicator').textContent = msg ? '🔄 ' + msg : '';
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Load books
+// ══════════════════════════════════════════════════════════════
+async function loadBooks() {
+  if (!API_URL) {
+    document.getElementById('configBanner').style.display = 'block';
+    return;
+  }
+  setSyncing('載入中');
+  try {
+    const all = await apiFetch('/api/books');
+    books = { en: [], zh: [], pending: [] };
+    all.forEach(b => { if (books[b.tab]) books[b.tab].push(b); });
+    updateCounts();
+    renderList();
+    setSyncing('');
+  } catch(e) {
+    setSyncing('');
+    toast('載入失敗：' + e.message, 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Tabs
+// ══════════════════════════════════════════════════════════════
+const tabTitles = { en: '🇺🇸 英文書清單', zh: '🇹🇼 中文書清單', pending: '⏳ 待借閱清單' };
+const tabLabels = { en: '🇺🇸 英文書', zh: '🇹🇼 中文書', pending: '⏳ 待借閱' };
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+  document.getElementById('listTitle').textContent = tabTitles[tab];
+  document.getElementById('filterInput').value = '';
+  updateTargetTabRow();
+  renderList();
+}
+
+function updateTargetTabRow() {
+  const row = document.getElementById('targetTabRow');
+  row.innerHTML = ['en','zh','pending'].map(t => `
+    <div class="status-chip ${t===selectedTargetTab?'status-registered':''}"
+         onclick="selectTargetTab('${t}',this)"
+         style="${t===selectedTargetTab?'':'background:white;border-color:var(--border);color:var(--text-light);'}">
+      ${tabLabels[t]}
+    </div>`).join('');
+}
+
+function selectTargetTab(tab, el) {
+  selectedTargetTab = tab;
+  document.querySelectorAll('#targetTabRow .status-chip').forEach(e => {
+    e.className = 'status-chip';
+    e.style = 'background:white;border-color:var(--border);color:var(--text-light);';
+  });
+  el.className = 'status-chip status-registered';
+  el.style = '';
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Search
+// ══════════════════════════════════════════════════════════════
+function updateChips(input) {
+  ['both','google','ol'].forEach(id => document.getElementById('chip-'+id)?.classList.remove('checked'));
+  const map = { both:'both', google:'google', openlibrary:'ol' };
+  document.getElementById('chip-'+(map[input.value]||'both'))?.classList.add('checked');
+}
+
+async function searchBooks() {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) { toast('請輸入書名！', 'error'); return; }
+  const type = document.querySelector('input[name="searchType"]:checked').value;
+  const container = document.getElementById('searchResults');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div> 搜尋中…</div>';
+  selectedBook = null;
+  document.getElementById('addForm').style.display = 'none';
+
+  const results = [];
+  try {
+    if (type === 'both' || type === 'google') results.push(...await searchGoogle(q));
+    if (type === 'both' || type === 'openlibrary') {
+      (await searchOpenLibrary(q)).forEach(b => {
+        const dup = results.find(r => r.isbn13 && r.isbn13 === b.isbn13);
+        if (!dup) results.push(b);
+        else if (!dup.coverUrl && b.coverUrl) dup.coverUrl = b.coverUrl;
+      });
+    }
+  } catch(e) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>搜尋失敗：${e.message}</p></div>`;
+    return;
+  }
+
+  if (!results.length) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">😔</div><p>找不到相關書籍</p></div>';
+    return;
+  }
+  window._searchResults = results;
+  container.innerHTML = results.map((b, i) => `
+    <div class="search-result-item" id="result-${i}" onclick="selectResult(${i})">
+      ${b.coverUrl
+        ? `<img class="book-cover" src="${b.coverUrl}" onerror="this.style.display='none';this.nextSibling.style.display='flex'">
+           <div class="book-cover-placeholder" style="display:none;">📖</div>`
+        : `<div class="book-cover-placeholder">📖</div>`}
+      <div class="result-info">
+        <div class="result-title">${escHtml(b.title)}</div>
+        <div class="result-author">${escHtml(b.author||'')}</div>
+        <div class="result-meta">${b.publisher?escHtml(b.publisher)+' · ':''}${b.pages?b.pages+'頁 · ':''}${b.isbn13?'ISBN: '+b.isbn13:''}</div>
+        <span class="result-source source-${b.source}">${b.source==='google'?'Google Books':'Open Library'}</span>
+      </div>
+    </div>`).join('');
+}
+
+async function searchGoogle(q) {
+  const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=8&printType=books`);
+  const data = await r.json();
+  return (data.items||[]).map(item => {
+    const info = item.volumeInfo||{};
+    const isbn13 = (info.industryIdentifiers||[]).find(x=>x.type==='ISBN_13')?.identifier||'';
+    const coverUrl = ((info.imageLinks||{}).thumbnail||'').replace('http://','https://');
+    return { title:info.title||'', series:'', author:(info.authors||[]).join(' / '),
+      publisher:info.publisher||'', isbn13, pages:info.pageCount||'', lexile:'', coverUrl, source:'google' };
+  });
+}
+
+async function searchOpenLibrary(q) {
+  const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=8&fields=key,title,author_name,publisher,number_of_pages_median,isbn,cover_i,series`);
+  const data = await r.json();
+  return (data.docs||[]).slice(0,8).map(doc => {
+    const isbn13 = (doc.isbn||[]).find(i=>i.length===13)||'';
+    const coverUrl = doc.cover_i?`https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`:'';
+    return { title:doc.title||'', series:(doc.series||[])[0]||'', author:(doc.author_name||[]).join(' / '),
+      publisher:(doc.publisher||[])[0]||'', isbn13, pages:doc.number_of_pages_median||'', lexile:'', coverUrl, source:'openlibrary' };
+  });
+}
+
+function selectResult(i) {
+  document.querySelectorAll('.search-result-item').forEach(el => el.classList.remove('selected'));
+  document.getElementById('result-'+i).classList.add('selected');
+  selectedBook = window._searchResults[i];
+  selectedTargetTab = currentTab;
+  updateTargetTabRow();
+  renderAddForm();
+}
+
+function renderAddForm() {
+  if (!selectedBook) return;
+  const b = selectedBook;
+  document.getElementById('selectedPreview').innerHTML = `
+    ${b.coverUrl ? `<img class="book-cover" src="${b.coverUrl}" style="width:50px;height:67px;">` : `<div class="book-cover-placeholder" style="width:50px;height:67px;">📖</div>`}
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:700;font-size:0.92rem;line-height:1.3;">${escHtml(b.title)}</div>
+      <div style="font-size:0.82rem;color:var(--text-light);margin-top:3px;">${escHtml(b.author||'')}</div>
+      <div style="font-size:0.78rem;color:var(--text-light);">${escHtml(b.isbn13||'')}</div>
+    </div>`;
+  document.getElementById('addForm').style.display = 'block';
+  const now = new Date();
+  if (!document.getElementById('fReadIn').value)
+    document.getElementById('fReadIn').value = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`;
+  selectStatus('unread', document.querySelector('.status-chip.status-unread'));
+}
+
+function selectStatus(status, el) {
+  selectedStatus = status;
+  document.querySelectorAll('#statusRadios .status-chip').forEach(c => c.style.boxShadow = '');
+  if (el) el.style.boxShadow = '0 0 0 3px rgba(74,144,217,0.35)';
+}
+
+async function addBook() {
+  if (!selectedBook) return;
+  if (!API_URL) { openConfigModal(); return; }
+  const book = {
+    ...selectedBook,
+    tab: selectedTargetTab,
+    readIn: document.getElementById('fReadIn').value.trim(),
+    foundAt: document.getElementById('fFoundAt').value.trim(),
+    status: selectedStatus,
+  };
+  setSyncing('新增中');
+  try {
+    const saved = await apiFetch('/api/books', { method:'POST', body: JSON.stringify(book) });
+    books[saved.tab].push(saved);
+    updateCounts();
+    if (saved.tab === currentTab) renderList();
+    toast(`「${saved.title}」已新增！`, 'success');
+    document.getElementById('addForm').style.display = 'none';
+    document.getElementById('fReadIn').value = '';
+    document.getElementById('fFoundAt').value = '';
+    document.querySelectorAll('.search-result-item').forEach(el => el.classList.remove('selected'));
+    selectedBook = null;
+  } catch(e) {
+    toast('新增失敗：'+e.message, 'error');
+  }
+  setSyncing('');
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Render List
+// ══════════════════════════════════════════════════════════════
+function renderList() {
+  const filter = (document.getElementById('filterInput').value||'').toLowerCase();
+  const list = books[currentTab].filter(b =>
+    !filter || (b.title||'').toLowerCase().includes(filter)
+      || (b.author||'').toLowerCase().includes(filter)
+      || (b.foundAt||'').toLowerCase().includes(filter)
+      || (b.isbn13||'').includes(filter)
+  );
+  const wrap = document.getElementById('tableWrap');
+  if (!list.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>${filter?'找不到符合的書籍':'清單是空的，試試搜尋並新增書籍！'}</p></div>`;
+    return;
+  }
+  const isEn = currentTab === 'en';
+  const isPending = currentTab === 'pending';
+  const headers = isEn
+    ? ['','書名','系列','作者','出版社','ISBN-13','頁數','Lexile','來源','月份','狀態','操作']
+    : isPending
+    ? ['','書名','系列','作者','出版社','ISBN-13','頁數','來源','備註','操作']
+    : ['','書名','系列','作者','出版社','ISBN-13','頁數','來源','月份','狀態','操作'];
+
+  const rows = list.map(b => {
+    const rowClass = b.status==='registered'?'status-registered':b.status==='read'?'status-read':'status-unread';
+    const cover = b.coverUrl
+      ? `<img class="book-thumb" src="${b.coverUrl}" onerror="this.style.display='none';">`
+      : `<div class="book-thumb-ph">📖</div>`;
+    const statusLabel = b.status==='registered'?'✅ 已登記':b.status==='read'?'📗 已讀':'📘 未讀';
+    const actions = `<div class="actions-cell">
+      <button class="btn-icon btn-edit" onclick="openEdit(${b.id})" title="編輯">✏️</button>
+      <button class="btn-icon btn-delete" onclick="deleteBook(${b.id})" title="刪除">🗑️</button>
+    </div>`;
+    if (isPending) return `<tr><td>${cover}</td>
+      <td><strong>${escHtml(b.title)}</strong></td><td>${escHtml(b.series||'')}</td>
+      <td>${escHtml(b.author||'')}</td><td>${escHtml(b.publisher||'')}</td>
+      <td class="isbn-badge">${escHtml(b.isbn13||'')}</td><td>${b.pages||''}</td>
+      <td><span class="source-tag">${escHtml(b.foundAt||'')}</span></td>
+      <td class="pending-note">${escHtml(b.note||'')}</td><td>${actions}</td></tr>`;
+    return `<tr class="${rowClass}"><td>${cover}</td>
+      <td><strong>${escHtml(b.title)}</strong></td><td>${escHtml(b.series||'')}</td>
+      <td>${escHtml(b.author||'')}</td><td>${escHtml(b.publisher||'')}</td>
+      <td class="isbn-badge">${escHtml(b.isbn13||'')}</td><td>${b.pages||''}</td>
+      ${isEn?`<td class="lexile-badge">${escHtml(b.lexile||'')}</td>`:''}
+      <td><span class="source-tag">${escHtml(b.foundAt||'')}</span></td>
+      <td class="month-badge">${formatMonth(b.readIn)}</td>
+      <td>${statusLabel}</td><td>${actions}</td></tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Edit / Delete
+// ══════════════════════════════════════════════════════════════
+function openEdit(id) {
+  const b = books[currentTab].find(x => x.id === id);
+  if (!b) return;
+  editingBook = { ...b };
+  document.getElementById('editTitle').value = b.title||'';
+  document.getElementById('editSeries').value = b.series||'';
+  document.getElementById('editAuthor').value = b.author||'';
+  document.getElementById('editPublisher').value = b.publisher||'';
+  document.getElementById('editIsbn').value = b.isbn13||'';
+  document.getElementById('editPages').value = b.pages||'';
+  document.getElementById('editLexile').value = b.lexile||'';
+  document.getElementById('editReadIn').value = b.readIn||'';
+  document.getElementById('editFoundAt').value = b.foundAt||'';
+  document.getElementById('editStatus').value = b.status||'unread';
+  document.getElementById('editNote').value = b.note||'';
+  document.getElementById('editTab').value = b.tab||currentTab;
+  document.getElementById('editModal').style.display = 'flex';
+}
+
+function closeModal() { document.getElementById('editModal').style.display = 'none'; editingBook = null; }
+
+async function saveEdit() {
+  if (!editingBook) return;
+  const updated = {
+    ...editingBook,
+    title: document.getElementById('editTitle').value.trim(),
+    series: document.getElementById('editSeries').value.trim(),
+    author: document.getElementById('editAuthor').value.trim(),
+    publisher: document.getElementById('editPublisher').value.trim(),
+    isbn13: document.getElementById('editIsbn').value.trim(),
+    pages: document.getElementById('editPages').value,
+    lexile: document.getElementById('editLexile').value.trim(),
+    readIn: document.getElementById('editReadIn').value.trim(),
+    foundAt: document.getElementById('editFoundAt').value.trim(),
+    status: document.getElementById('editStatus').value,
+    note: document.getElementById('editNote').value.trim(),
+    tab: document.getElementById('editTab').value,
+  };
+  setSyncing('儲存中');
+  try {
+    const saved = await apiFetch(`/api/books/${updated.id}`, { method:'PUT', body: JSON.stringify(updated) });
+    // Remove from old tab, add to new tab
+    books[editingBook.tab] = books[editingBook.tab].filter(x => x.id !== saved.id);
+    if (!books[saved.tab]) books[saved.tab] = [];
+    books[saved.tab] = books[saved.tab].filter(x => x.id !== saved.id);
+    books[saved.tab].push(saved);
+    updateCounts();
+    renderList();
+    closeModal();
+    toast('已儲存！', 'success');
+  } catch(e) {
+    toast('儲存失敗：'+e.message, 'error');
+  }
+  setSyncing('');
+}
+
+async function deleteBook(id) {
+  if (!confirm('確定要刪除這本書嗎？')) return;
+  setSyncing('刪除中');
+  try {
+    await apiFetch(`/api/books/${id}`, { method:'DELETE' });
+    books[currentTab] = books[currentTab].filter(b => b.id !== id);
+    updateCounts();
+    renderList();
+    toast('已刪除', 'success');
+  } catch(e) {
+    toast('刪除失敗：'+e.message, 'error');
+  }
+  setSyncing('');
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Import / Export xlsx
+// ══════════════════════════════════════════════════════════════
+function importXlsx() { document.getElementById('xlsxInput').click(); }
+
+async function handleXlsxImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!API_URL) { openConfigModal(); return; }
+  const ab = await file.arrayBuffer();
+  const wb = XLSX.read(ab, { type: 'array', cellStyles: true });
+  const sheetMap = {};
+  wb.SheetNames.forEach(name => {
+    if (name.toLowerCase().includes('english')) sheetMap['en'] = name;
+    else if (name.includes('中文')) sheetMap['zh'] = name;
+    else if (name.toLowerCase().includes('pending')) sheetMap['pending'] = name;
+  });
+
+  const allBooks = [];
+  for (const [tab, sheetName] of Object.entries(sheetMap)) {
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+    if (rows.length < 2) continue;
+    for (let ri = 1; ri < rows.length; ri++) {
+      const row = rows[ri];
+      if (!row[0]) continue;
+      let status = 'unread';
+      try {
+        const cellAddr = XLSX.utils.encode_cell({ r:ri, c:0 });
+        const rawCell = ws[cellAddr];
+        if (rawCell?.s?.fgColor) {
+          const rgb = (rawCell.s.fgColor.rgb||'').toUpperCase();
+          if (rgb.includes('CFE2F3')) status = 'registered';
+          else if (rgb.includes('D9EAD3')) status = 'read';
+        }
+      } catch(e) {}
+      const book = { tab, status };
+      if (tab === 'zh') {
+        book.title=row[0]; book.series=row[1]; book.author=row[2]; book.publisher=row[3];
+        book.isbn13=String(row[4]||''); book.pages=row[5]; book.foundAt=row[6]; book.readIn=String(row[7]||'');
+      } else {
+        book.title=row[0]; book.series=row[1]; book.author=row[2]; book.publisher=row[3];
+        book.isbn13=String(row[4]||''); book.pages=row[5]; book.lexile=row[6];
+        book.foundAt=row[7]; book.readIn=String(row[8]||''); book.note=row[9]||'';
+      }
+      if (book.title) allBooks.push(book);
+    }
+  }
+
+  if (!allBooks.length) { toast('找不到可匯入的書籍', 'error'); return; }
+  if (!confirm(`即將匯入 ${allBooks.length} 本書，這將取代雲端現有的所有資料。確定嗎？`)) return;
+
+  setSyncing('匯入中');
+  try {
+    const result = await apiFetch('/api/import', { method:'POST', body: JSON.stringify({ books: allBooks }) });
+    toast(`匯入完成！共 ${result.count} 本書`, 'success');
+    await loadBooks();
+  } catch(e) {
+    toast('匯入失敗：'+e.message, 'error');
+  }
+  setSyncing('');
+  event.target.value = '';
+}
+
+function exportXlsx() {
+  const wb = XLSX.utils.book_new();
+  const enH = ['book title','series','author','publisher','ISBN-13','pages','Lexile measure','found at','read in'];
+  const zhH = ['書名','系列','作者','出版社','ISBN-13','頁數','來源','閱讀月份'];
+  const pendH = ['book title','series','author','publisher','ISBN-13','pages','Lexile','found at','read in','note'];
+
+  function makeSheet(list, headers, cols) {
+    const data = [headers, ...list.map(b => cols(b))];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    list.forEach((b, i) => {
+      const fgColor = b.status==='registered'?{rgb:'CFE2F3'}:b.status==='read'?{rgb:'D9EAD3'}:null;
+      if (!fgColor) return;
+      const range = XLSX.utils.decode_range(ws['!ref']||'A1');
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const addr = XLSX.utils.encode_cell({ r:i+1, c });
+        if (!ws[addr]) ws[addr] = { t:'s', v:'' };
+        ws[addr].s = { fill: { fgColor, patternType:'solid' } };
+      }
+    });
+    return ws;
+  }
+
+  XLSX.utils.book_append_sheet(wb, makeSheet(books.en, enH, b=>[b.title,b.series,b.author,b.publisher,b.isbn13,b.pages,b.lexile,b.foundAt,b.readIn]), 'English titles');
+  XLSX.utils.book_append_sheet(wb, makeSheet(books.zh, zhH, b=>[b.title,b.series,b.author,b.publisher,b.isbn13,b.pages,b.foundAt,b.readIn]), '中文書');
+  XLSX.utils.book_append_sheet(wb, makeSheet(books.pending, pendH, b=>[b.title,b.series,b.author,b.publisher,b.isbn13,b.pages,b.lexile,b.foundAt,b.readIn,b.note||'']), 'pending');
+  XLSX.writeFile(wb, "Charlene's Book List.xlsx");
+  toast('已匯出 xlsx！', 'success');
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Utils
+// ══════════════════════════════════════════════════════════════
+function updateCounts() {
+  document.getElementById('cnt-en').textContent = books.en.length;
+  document.getElementById('cnt-zh').textContent = books.zh.length;
+  document.getElementById('cnt-pending').textContent = books.pending.length;
+}
+function formatMonth(m) { return m&&m.length>=6 ? `${m.slice(0,4)}/${m.slice(4,6)}` : m||''; }
+function escHtml(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function toast(msg, type='') {
+  const tc = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = (type==='success'?'✅ ':type==='error'?'❌ ':'ℹ️ ') + msg;
+  tc.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Init
+// ══════════════════════════════════════════════════════════════
+(async () => {
+  updateTargetTabRow();
+  if (API_URL) {
+    await loadBooks();
+  } else {
+    document.getElementById('configBanner').style.display = 'block';
+    document.getElementById('tableWrap').innerHTML =
+      `<div class="empty-state"><div class="icon">⚙️</div><p>請先按右上角「⚙️ 設定」輸入 Worker 網址</p></div>`;
+  }
+})();
+</script>
+</body>
+</html>
