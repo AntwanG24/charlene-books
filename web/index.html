@@ -321,8 +321,8 @@ tr.dragging { opacity: 0.4; }
   <div class="header-actions">
     <span class="sync-indicator" id="syncIndicator"></span>
     <button class="btn btn-ghost btn-sm" onclick="openConfigModal()">⚙️</button>
-    <button class="btn btn-ghost btn-sm" onclick="importXlsx()">📥</button>
-    <button class="btn btn-ghost btn-sm" onclick="exportXlsx()">📤</button>
+    <button class="btn btn-ghost btn-sm" onclick="importXlsx()">📥 匯入</button>
+    <button class="btn btn-ghost btn-sm" onclick="exportXlsx()">📤 匯出</button>
   </div>
 </header>
 
@@ -370,7 +370,7 @@ tr.dragging { opacity: 0.4; }
       </div>
     </div>
     <div class="search-results" id="searchResults">
-      <div class="empty-state"><div class="icon">🔎</div><p>輸入書名開始搜尋</p></div>
+      <div class="empty-state"><div class="icon">🔎</div><p>輸入書名開始搜尋</p><br><button class="btn btn-sm" style="background:var(--bg);border:1.5px solid var(--border);color:var(--text-light);margin-top:4px;" onclick="openManualEntry()">✏️ 找不到？手動輸入</button></div>
     </div>
     <div class="add-form" id="addForm" style="display:none;">
       <h3>➕ 新增到書單</h3>
@@ -442,6 +442,7 @@ tr.dragging { opacity: 0.4; }
     <label class="radio-chip" id="mob-chip-google"><input type="radio" name="mobileSearchType" value="google" onchange="updateMobileChips(this)"> Google</label>
     <label class="radio-chip" id="mob-chip-ol"><input type="radio" name="mobileSearchType" value="openlibrary" onchange="updateMobileChips(this)"> Open Library</label>
     <button class="btn btn-primary btn-sm" onclick="searchBooksMobile()">搜尋</button>
+    <button class="btn btn-sm" style="background:var(--bg);border:1.5px solid var(--border);color:var(--text-light);" onclick="openManualEntry(true)">✏️ 手動</button>
   </div>
   <div class="mobile-search-results" id="mobileSearchResults">
     <div class="empty-state"><div class="icon">🔎</div><p>輸入書名開始搜尋</p></div>
@@ -527,6 +528,55 @@ tr.dragging { opacity: 0.4; }
     <div class="modal-actions">
       <button class="btn" style="background:var(--bg);border:1.5px solid var(--border);" onclick="closeMatchModal()">取消</button>
       <button class="btn btn-primary" id="matchConfirmBtn" style="display:none;" onclick="confirmMatch()">✅ 套用</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manual Entry Modal -->
+<div class="modal-overlay" id="manualModal" style="display:none;">
+  <div class="modal">
+    <h3>✏️ 手動輸入書目</h3>
+    <div class="form-row">
+      <div class="form-group"><label>書名 *</label><input type="text" class="form-control" id="manTitle" placeholder="書名"></div>
+      <div class="form-group"><label>系列</label><input type="text" class="form-control" id="manSeries" placeholder="系列名稱"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>作者</label><input type="text" class="form-control" id="manAuthor" placeholder="作者"></div>
+      <div class="form-group"><label>出版社</label><input type="text" class="form-control" id="manPublisher" placeholder="出版社"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>ISBN-13</label><input type="text" class="form-control" id="manIsbn" placeholder="9780000000000" maxlength="13"></div>
+      <div class="form-group"><label>頁數</label><input type="number" class="form-control" id="manPages" placeholder="32" min="1"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Lexile（英文書）</label><input type="text" class="form-control" id="manLexile" placeholder="例: AD480L"></div>
+      <div class="form-group"><label>借閱月份 (YYYYMM)</label><input type="text" class="form-control" id="manReadIn" placeholder="202506" maxlength="6"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>書本來源</label><input type="text" class="form-control" id="manFoundAt" placeholder="TPML / Chingshin…"></div>
+      <div class="form-group"><label>封面圖片網址（選填）</label><input type="text" class="form-control" id="manCoverUrl" placeholder="https://…"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>加入清單</label>
+        <select class="form-control" id="manTab">
+          <option value="en">🇺🇸 英文書</option>
+          <option value="zh">🇹🇼 中文書</option>
+          <option value="pending">⏳ 待借閱</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>閱讀狀態</label>
+        <select class="form-control" id="manStatus">
+          <option value="unread">📘 未讀</option>
+          <option value="registered">✅ 已登記</option>
+          <option value="read">📗 已讀未登記</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" style="background:var(--bg);border:1.5px solid var(--border);" onclick="closeManualModal()">取消</button>
+      <button class="btn btn-success" onclick="addManualBook()">✅ 新增到書單</button>
     </div>
   </div>
 </div>
@@ -838,7 +888,10 @@ async function searchOpenLibrary(q) {
 function renderSearchResults(containerId, results, selectFn) {
   const prefix = containerId==='mobileSearchResults'?'mob-':'';
   if (!results.length) {
-    document.getElementById(containerId).innerHTML='<div class="empty-state"><div class="icon">😔</div><p>找不到相關書籍</p></div>';
+    const manualBtn = containerId==='mobileSearchResults'
+      ? `<button class="btn btn-sm" style="background:var(--bg);border:1.5px solid var(--border);color:var(--text-light);margin-top:8px;" onclick="openManualEntry(true)">✏️ 手動輸入書目</button>`
+      : `<button class="btn btn-sm" style="background:var(--bg);border:1.5px solid var(--border);color:var(--text-light);margin-top:8px;" onclick="openManualEntry()">✏️ 手動輸入書目</button>`;
+    document.getElementById(containerId).innerHTML=`<div class="empty-state"><div class="icon">😔</div><p>找不到相關書籍</p>${manualBtn}</div>`;
     return;
   }
   document.getElementById(containerId).innerHTML = results.map((b,i)=>`
@@ -849,7 +902,7 @@ function renderSearchResults(containerId, results, selectFn) {
       <div class="result-info">
         <div class="result-title">${escHtml(b.title)}</div>
         <div class="result-author">${escHtml(b.author||'')}</div>
-        <div class="result-meta">${b.publisher?escHtml(b.publisher)+' · ':''}${b.pages?b.pages+'頁 · ':''}${b.isbn13?'ISBN: '+b.isbn13:''}${b.lexile?' · <strong style="color:var(--accent)">Lexile: '+b.lexile+'</strong>':''}</div>
+        <div class="result-meta">${b.publisher?escHtml(b.publisher)+' · ':''}${b.pages?formatPages(b.pages)+'頁 · ':''}${b.isbn13?'ISBN: '+b.isbn13:''}${b.lexile?' · <strong style="color:var(--accent)">Lexile: '+b.lexile+'</strong>':''}</div>
         <span class="result-source source-${b.source}">${b.source==='google'?'Google Books':'Open Library'}</span>
       </div>
     </div>`).join('');
@@ -942,8 +995,8 @@ function renderTable(list) {
     </div>`;
     const dragHandle = dragMode ? `<td><span class="drag-handle">⠿</span></td>` : '';
     const draggableAttr = dragMode ? `draggable="true" data-id="${b.id}" class="draggable ${rc}"` : `class="${rc}"`;
-    if (isPending) return `<tr ${draggableAttr} data-id="${b.id}">${dragHandle}<td>${numBadge}</td><td>${cv}</td><td><strong>${escHtml(b.title)}</strong></td><td>${escHtml(b.series||'')}</td><td>${escHtml(b.author||'')}</td><td>${escHtml(b.publisher||'')}</td><td class="isbn-badge">${escHtml(b.isbn13||'')}</td><td>${b.pages||''}</td><td><span class="source-tag">${escHtml(b.foundAt||'')}</span></td><td class="pending-note">${escHtml(b.note||'')}</td><td>${acts}</td></tr>`;
-    return `<tr ${draggableAttr} data-id="${b.id}">${dragHandle}<td>${numBadge}</td><td>${cv}</td><td><strong>${escHtml(b.title)}</strong></td><td>${escHtml(b.series||'')}</td><td>${escHtml(b.author||'')}</td><td>${escHtml(b.publisher||'')}</td><td class="isbn-badge">${escHtml(b.isbn13||'')}</td><td>${b.pages||''}</td>${isEn?`<td class="lexile-badge">${escHtml(b.lexile||'')}</td>`:''}<td><span class="source-tag">${escHtml(b.foundAt||'')}</span></td><td>${formatMonth(b.readIn)}</td><td>${sl}</td><td>${acts}</td></tr>`;
+    if (isPending) return `<tr ${draggableAttr} data-id="${b.id}">${dragHandle}<td>${numBadge}</td><td>${cv}</td><td><strong>${escHtml(b.title)}</strong></td><td>${escHtml(b.series||'')}</td><td>${escHtml(b.author||'')}</td><td>${escHtml(b.publisher||'')}</td><td class="isbn-badge">${escHtml(b.isbn13||'')}</td><td>${formatPages(b.pages)}</td><td><span class="source-tag">${escHtml(b.foundAt||'')}</span></td><td class="pending-note">${escHtml(b.note||'')}</td><td>${acts}</td></tr>`;
+    return `<tr ${draggableAttr} data-id="${b.id}">${dragHandle}<td>${numBadge}</td><td>${cv}</td><td><strong>${escHtml(b.title)}</strong></td><td>${escHtml(b.series||'')}</td><td>${escHtml(b.author||'')}</td><td>${escHtml(b.publisher||'')}</td><td class="isbn-badge">${escHtml(b.isbn13||'')}</td><td>${formatPages(b.pages)}</td>${isEn?`<td class="lexile-badge">${escHtml(b.lexile||'')}</td>`:''}<td><span class="source-tag">${escHtml(b.foundAt||'')}</span></td><td>${formatMonth(b.readIn)}</td><td>${sl}</td><td>${acts}</td></tr>`;
   }).join('');
   wrap.innerHTML=`<table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
   if (dragMode) initTableDrag();
@@ -1098,6 +1151,44 @@ async function confirmMatch() {
 function closeMatchModal() { document.getElementById('matchModal').style.display='none'; matchingBook=null; selectedMatchBook=null; }
 
 // ══════════════════════════════════════════════════════════════
+//  Manual Entry
+// ══════════════════════════════════════════════════════════════
+function openManualEntry(isMobile=false) {
+  // Pre-fill tab from current tab
+  document.getElementById('manTab').value = currentTab;
+  // Pre-fill month
+  const now=new Date();
+  document.getElementById('manReadIn').value=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`;
+  // Clear fields
+  ['manTitle','manSeries','manAuthor','manPublisher','manIsbn','manPages','manLexile','manFoundAt','manCoverUrl'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('manStatus').value='unread';
+  document.getElementById('manualModal').style.display='flex';
+}
+function closeManualModal() { document.getElementById('manualModal').style.display='none'; }
+async function addManualBook() {
+  const title = document.getElementById('manTitle').value.trim();
+  if (!title) { toast('請填入書名！','error'); return; }
+  if (!API_URL) { closeManualModal(); openConfigModal(); return; }
+  const book = {
+    title,
+    series:     document.getElementById('manSeries').value.trim(),
+    author:     document.getElementById('manAuthor').value.trim(),
+    publisher:  document.getElementById('manPublisher').value.trim(),
+    isbn13:     document.getElementById('manIsbn').value.trim(),
+    pages:      document.getElementById('manPages').value,
+    lexile:     document.getElementById('manLexile').value.trim(),
+    readIn:     document.getElementById('manReadIn').value.trim(),
+    foundAt:    document.getElementById('manFoundAt').value.trim(),
+    coverUrl:   document.getElementById('manCoverUrl').value.trim(),
+    tab:        document.getElementById('manTab').value,
+    status:     document.getElementById('manStatus').value,
+    source:     'manual',
+  };
+  closeManualModal();
+  await saveNewBook(book, book.tab, book.readIn, book.foundAt, book.status);
+}
+
+// ══════════════════════════════════════════════════════════════
 //  Import / Export
 // ══════════════════════════════════════════════════════════════
 function importXlsx() { document.getElementById('xlsxInput').click(); }
@@ -1171,9 +1262,13 @@ function sortedList(list) {
   if (sortKey === 'sortOrder') return [...list].sort((a, b) => (a.sortOrder - b.sortOrder) * sortDir);
   return [...list].sort((a, b) => {
     let av = a[sortKey] || '', bv = b[sortKey] || '';
-    if (sortKey === 'pages' || sortKey === 'lexile') {
-      // Numeric-aware: extract leading number
-      const an = parseFloat(av) || 0, bn = parseFloat(bv) || 0;
+    if (sortKey === 'pages') {
+      return (parseFloat(av)||0 - parseFloat(bv)||0) * sortDir;
+    }
+    if (sortKey === 'lexile') {
+      // Ignore prefix (AD, IG, GN, BR, NC, HL, etc.), sort by number only
+      const an = parseFloat((av.match(/\d+/)||['0'])[0]) || 0;
+      const bn = parseFloat((bv.match(/\d+/)||['0'])[0]) || 0;
       return (an - bn) * sortDir;
     }
     if (sortKey === 'readIn') {
@@ -1290,6 +1385,7 @@ function updateCounts() {
   });
 }
 function formatMonth(m){return m&&m.length>=6?`${m.slice(0,4)}/${m.slice(4,6)}`:m||'';}
+function formatPages(p){if(!p&&p!==0) return '';const n=parseFloat(p);return isNaN(n)?p:Math.round(n).toString();}
 function escHtml(str){return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function coverHtml(b,h=50){const w=Math.round(h*0.75);return b.coverUrl?`<img class="book-cover" src="${b.coverUrl}" style="width:${w}px;height:${h}px;" onerror="this.style.display='none';this.nextSibling.style.display='flex'"><div class="book-cover-placeholder" style="width:${w}px;height:${h}px;display:none;">📖</div>`:`<div class="book-cover-placeholder" style="width:${w}px;height:${h}px;">📖</div>`;}
 function toast(msg,type=''){const tc=document.getElementById('toastContainer');const el=document.createElement('div');el.className=`toast ${type}`;el.textContent=(type==='success'?'✅ ':type==='error'?'❌ ':'ℹ️ ')+msg;tc.appendChild(el);setTimeout(()=>el.remove(),3500);}
