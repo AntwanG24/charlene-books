@@ -144,25 +144,102 @@ export default {
     // GET /api/tpml?q=QUERY — proxy search to Taipei Public Library
     if (method === 'GET' && path === '/api/tpml') {
       const q = url.searchParams.get('q');
+      const probe = url.searchParams.get('probe'); // probe=1 returns raw GraphQL responses for debugging
       if (!q) return json({ error: 'Missing q' }, 400);
 
+      const gqlUrl = 'https://book.tpml.edu.tw/api/HyLibWS/graphql';
+      const gqlHdrs = {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+        'Origin': 'https://book.tpml.edu.tw',
+        'Referer': 'https://book.tpml.edu.tw/',
+      };
+
       try {
-        // TPML WebPAC search URL (title search)
-        const searchUrl = `https://book.tpml.edu.tw/webpac/search.cfm?searchtype=general&searchdata=${encodeURIComponent(q)}&searchfield=TP&searchcat=M`;
-        const resp = await fetch(searchUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; LibrarySearch/1.0)',
-            'Accept': 'text/html,application/xhtml+xml',
-            'Accept-Language': 'zh-TW,zh;q=0.9',
+        // Step 1: Call queryGrouping to establish search context and get hyftdToken
+        const groupBody = {
+          operationName: "queryGrouping",
+          variables: {
+            searchForm: {
+              searchField: ["FullText"],
+              searchInput: [q],
+              op: [],
+              pageNo: 1,
+              pageSize: 10,
+            }
+          },
+          query: `query queryGrouping($searchForm: SearchForm) {
+            queryGrouping(searchForm: $searchForm) {
+              hyftdToken
+              groupList { groupKey groupCount { key count } }
+            }
+          }`
+        };
+
+        const groupResp = await fetch(gqlUrl, { method: 'POST', headers: gqlHdrs, body: JSON.stringify(groupBody) });
+        const groupData = await groupResp.json();
+        const hyftdToken = groupData?.data?.queryGrouping?.hyftdToken;
+
+        if (probe) {
+          // Return debug info: the token and then attempt searchSimpleList
+          const debugInfo = { step1_status: groupResp.status, hyftdToken, step1_data: JSON.stringify(groupData).slice(0, 2000) };
+
+          if (hyftdToken) {
+            const listBody = {
+              operationName: "searchSimpleList",
+              variables: { hyftdToken, pageNo: 1, pageSize: 10 },
+              query: `query searchSimpleList($hyftdToken: Int, $pageNo: Int, $pageSize: Int) {
+                searchSimpleList(hyftdToken: $hyftdToken, pageNo: $pageNo, pageSize: $pageSize) {
+                  total
+                  list {
+                    id title author publisher publicationYear isbn coverImageUrl
+                  }
+                }
+              }`
+            };
+            const listResp = await fetch(gqlUrl, { method: 'POST', headers: gqlHdrs, body: JSON.stringify(listBody) });
+            const listText = await listResp.text();
+            debugInfo.step2_status = listResp.status;
+            debugInfo.step2_data = listText.slice(0, 5000);
           }
-        });
-        if (!resp.ok) return json({ results: [], error: `TPML returned ${resp.status}` });
 
-        const html = await resp.text();
+          return json(debugInfo);
+        }
 
-        // Parse book entries from TPML search result HTML
-        const results = parseTpmlResults(html);
-        return json({ results });
+        if (!hyftdToken) {
+          return json({ results: [], error: 'No search token from TPML' });
+        }
+
+        // Step 2: Use hyftdToken to fetch actual book list
+        const listBody = {
+          operationName: "searchSimpleList",
+          variables: { hyftdToken, pageNo: 1, pageSize: 10 },
+          query: `query searchSimpleList($hyftdToken: Int, $pageNo: Int, $pageSize: Int) {
+            searchSimpleList(hyftdToken: $hyftdToken, pageNo: $pageNo, pageSize: $pageSize) {
+              total
+              list {
+                id title author publisher publicationYear isbn coverImageUrl
+              }
+            }
+          }`
+        };
+
+        const listResp = await fetch(gqlUrl, { method: 'POST', headers: gqlHdrs, body: JSON.stringify(listBody) });
+        const listData = await listResp.json();
+        const list = listData?.data?.searchSimpleList?.list || [];
+
+        const results = list.map(b => ({
+          title: b.title || '',
+          author: b.author || '',
+          publisher: b.publisher || '',
+          isbn13: (b.isbn || '').replace(/-/g, ''),
+          coverUrl: b.coverImageUrl || '',
+          source: 'tpml',
+        }));
+
+        return json({ results, total: listData?.data?.searchSimpleList?.total ?? 0 });
       } catch (e) {
         return json({ results: [], error: e.message });
       }
@@ -172,66 +249,3 @@ export default {
   },
 };
 
-// Parse TPML WebPAC search result HTML
-function parseTpmlResults(html) {
-  const books = [];
-
-  // TPML result rows typically contain: title, author, publisher, year, ISBN
-  // Pattern: look for table rows with book data
-  // The structure uses <div class="search_result"> or similar patterns
-
-  // Extract title links - typically <a href="detail.cfm?...">TITLE</a>
-  const titleRe = /<a[^>]+href=["'][^"']*detail\.cfm[^"']*["'][^>]*>\s*([^<]{2,}?)\s*<\/a>/gi;
-  // Extract detail blocks containing metadata
-  // TPML uses a table layout: each result in a <tr> with cells for 書名/著者/出版/年份/ISBN
-
-  // Try to match result rows with structured data
-  // TPML WebPAC HTML structure (as of 2024):
-  // <td class="title_td"><a href="detail.cfm?bid=...">書名</a></td>
-  // <td>著者</td><td>出版社</td><td>出版年</td><td>ISBN</td>
-
-  // Match full result rows
-  const rowRe = /<tr[^>]*class=["']?(?:odd|even|search_result)[^"']*["']?[^>]*>([\s\S]*?)<\/tr>/gi;
-  let rowMatch;
-  while ((rowMatch = rowRe.exec(html)) !== null && books.length < 10) {
-    const row = rowMatch[1];
-    // Extract cells
-    const cells = [];
-    const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
-    let cellMatch;
-    while ((cellMatch = cellRe.exec(row)) !== null) {
-      cells.push(stripHtml(cellMatch[1]).trim());
-    }
-    if (cells.length < 3) continue;
-
-    // Try to extract title from anchor in row
-    const titleMatch = row.match(/<a[^>]+href=["'][^"']*detail[^"']*["'][^>]*>\s*([\s\S]*?)\s*<\/a>/i);
-    const title = titleMatch ? stripHtml(titleMatch[1]).trim() : cells[0];
-    if (!title || title.length < 2) continue;
-
-    // Guess field positions: title, author, publisher, year, isbn
-    const author = cells[1] || '';
-    const publisher = cells[2] || '';
-    const isbn = cells.find(c => /^\d{10,13}$/.test(c.replace(/-/g,''))) || '';
-    const isbn13 = isbn.replace(/-/g,'').length === 13 ? isbn.replace(/-/g,'') : '';
-
-    books.push({ title, author, publisher, isbn13, source: 'tpml' });
-  }
-
-  // Fallback: extract title links if table parsing found nothing
-  if (books.length === 0) {
-    let m;
-    while ((m = titleRe.exec(html)) !== null && books.length < 10) {
-      const title = stripHtml(m[1]).trim();
-      if (title.length >= 2 && !title.match(/^\s*$/)) {
-        books.push({ title, author: '', publisher: '', isbn13: '', source: 'tpml' });
-      }
-    }
-  }
-
-  return books;
-}
-
-function stripHtml(str) {
-  return str.replace(/<[^>]+>/g, ' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&nbsp;/g,' ').replace(/&#\d+;/g,'').replace(/\s+/g,' ').trim();
-}
