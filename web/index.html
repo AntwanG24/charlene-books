@@ -772,11 +772,13 @@ async function searchBooks() {
   const q = document.getElementById('searchInput').value.trim();
   if (!q) { toast('請輸入書名！','error'); return; }
   const type = document.querySelector('input[name="searchType"]:checked').value;
+  // 北市圖：直接開新分頁，不在此處搜尋
+  if (type === 'tpml') { window.open(tpmlSearchUrl(q), '_blank', 'noopener'); return; }
   document.getElementById('searchResults').innerHTML = '<div class="loading"><div class="spinner"></div> 搜尋中…</div>';
   selectedBook = null; document.getElementById('addForm').style.display='none';
   const results = await doSearch(q, type);
   window._searchResults = results;
-  renderSearchResults('searchResults', results, 'selectResult');
+  renderSearchResults('searchResults', results, 'selectResult', q, type);
 }
 
 function selectResult(i) {
@@ -840,11 +842,13 @@ async function searchBooksMobile() {
   const q = document.getElementById('mobileSearchInput').value.trim();
   if (!q) { toast('請輸入書名！','error'); return; }
   const type = document.querySelector('input[name="mobileSearchType"]:checked').value;
+  // 北市圖：直接開新分頁，不在此處搜尋
+  if (type === 'tpml') { window.open(tpmlSearchUrl(q), '_blank', 'noopener'); return; }
   document.getElementById('mobileSearchResults').innerHTML='<div class="loading"><div class="spinner"></div> 搜尋中…</div>';
   mobileSelectedBook=null; document.getElementById('mobileAddForm').style.display='none';
   const results = await doSearch(q, type);
   window._mobileSearchResults = results;
-  renderSearchResults('mobileSearchResults', results, 'selectMobileResult');
+  renderSearchResults('mobileSearchResults', results, 'selectMobileResult', q, type);
 }
 
 function selectMobileResult(i) {
@@ -918,70 +922,13 @@ async function doSearch(q, type) {
         });
       }
     }
-    if (type==='both'||type==='tpml') {
-      (await searchTpml(q)).forEach(b => {
-        // Merge with existing by ISBN, or add if new
-        const dup = b.isbn13 && results.find(r => r.isbn13 && r.isbn13 === b.isbn13);
-        if (!dup) results.push(b);
-        else dup.tpmlAvailable = true; // Mark as available in TPML
-      });
-    }
   } catch(e) { toast('搜尋失敗：'+e.message,'error'); }
   return results;
 }
 
-async function searchTpml(q) {
-  // 直接從瀏覽器呼叫 TPML GraphQL（繞過 Worker，避免伺服器端 IP 封鎖）
-  const gqlUrl = 'https://book.tpml.edu.tw/api/HyLibWS/graphql';
-  try {
-    // Step 1: queryGrouping 取得 hyftdToken
-    const groupResp = await fetch(gqlUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        operationName: 'queryGrouping',
-        variables: {
-          searchForm: { searchField: ['FullText'], searchInput: [q], op: [], pageNo: 1, pageSize: 10 }
-        },
-        query: `query queryGrouping($searchForm: SearchForm) {
-          queryGrouping(searchForm: $searchForm) {
-            hyftdToken
-          }
-        }`
-      })
-    });
-    if (!groupResp.ok) return [];
-    const groupData = await groupResp.json();
-    const hyftdToken = groupData?.data?.queryGrouping?.hyftdToken;
-    if (!hyftdToken) return [];
-
-    // Step 2: searchSimpleList 取得書目列表
-    const listResp = await fetch(gqlUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        operationName: 'searchSimpleList',
-        variables: { hyftdToken, pageNo: 1, pageSize: 10 },
-        query: `query searchSimpleList($hyftdToken: Int, $pageNo: Int, $pageSize: Int) {
-          searchSimpleList(hyftdToken: $hyftdToken, pageNo: $pageNo, pageSize: $pageSize) {
-            total
-            list { id title author publisher publicationYear isbn coverImageUrl }
-          }
-        }`
-      })
-    });
-    if (!listResp.ok) return [];
-    const listData = await listResp.json();
-    const list = listData?.data?.searchSimpleList?.list || [];
-    return list.map(b => ({
-      title: b.title || '',
-      author: b.author || '',
-      publisher: b.publisher || '',
-      isbn13: (b.isbn || '').replace(/-/g, ''),
-      coverUrl: b.coverImageUrl || '',
-      source: 'tpml',
-    }));
-  } catch(e) { return []; }
+function tpmlSearchUrl(q) {
+  // 北市圖全文搜尋網址
+  return `https://book.tpml.edu.tw/webpacIndex/search/searchResult?searchInput=${encodeURIComponent(q)}&searchField=FullText`;
 }
 
 async function searchGoogle(q, langRestrict='') {
@@ -1016,13 +963,16 @@ async function searchOpenLibrary(q) {
   });
 }
 
-function renderSearchResults(containerId, results, selectFn) {
+function renderSearchResults(containerId, results, selectFn, q='', type='both') {
   const prefix = containerId==='mobileSearchResults'?'mob-':'';
   const isMobile = containerId==='mobileSearchResults';
   const manualBtn = `<button class="btn btn-sm" style="background:var(--bg);border:1.5px solid var(--border);color:var(--text-light);margin-top:8px;" onclick="openManualEntry(${isMobile})">✏️ 手動輸入書目</button>`;
+  const tpmlBtn = (type==='both'||type==='tpml') && q
+    ? `<a href="${tpmlSearchUrl(q)}" target="_blank" rel="noopener" class="btn btn-sm" style="background:#FFF3E0;border:1.5px solid #FFB74D;color:#E65100;margin-top:8px;text-decoration:none;">🏛️ 在北市圖搜尋「${escHtml(q)}」</a>`
+    : '';
 
   if (!results.length) {
-    document.getElementById(containerId).innerHTML=`<div class="empty-state"><div class="icon">😔</div><p>找不到相關書籍</p>${manualBtn}</div>`;
+    document.getElementById(containerId).innerHTML=`<div class="empty-state"><div class="icon">😔</div><p>找不到相關書籍</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">${tpmlBtn}${manualBtn}</div></div>`;
     return;
   }
 
@@ -1040,7 +990,7 @@ function renderSearchResults(containerId, results, selectFn) {
         ${b.tpmlAvailable?'<span class="result-source source-tpml" style="margin-left:4px;">🏛️ 北市圖有館藏</span>':''}
       </div>
     </div>`).join('')
-  + `<div style="padding:10px 0 4px;border-top:1px solid var(--border);margin-top:8px;text-align:center;">${manualBtn}</div>`;
+  + `<div style="padding:10px 0 4px;border-top:1px solid var(--border);margin-top:8px;text-align:center;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">${tpmlBtn}${manualBtn}</div>`;
 }
 
 async function showSeriesSuggestions(book, containerId, isMobile=false) {
