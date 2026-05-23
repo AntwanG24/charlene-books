@@ -928,7 +928,7 @@ async function doSearch(q, type) {
 
 function tpmlSearchUrl(q) {
   // 北市圖全文搜尋網址
-  return `https://book.tpml.edu.tw/webpacIndex/search/searchResult?searchInput=${encodeURIComponent(q)}&searchField=FullText`;
+  return `https://book.tpml.edu.tw/search?searchInput=${encodeURIComponent(q)}&searchField=FullText`;
 }
 
 async function searchGoogle(q, langRestrict='') {
