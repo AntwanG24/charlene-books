@@ -116,7 +116,6 @@ header .subtitle { font-size: 0.78rem; opacity: 0.85; }
 .result-author { font-size: 0.78rem; color: var(--text-light); margin-bottom: 2px; }
 .result-meta { font-size: 0.75rem; color: var(--text-light); }
 .result-source { display: inline-block; font-size: 0.68rem; padding: 1px 5px; border-radius: 4px; font-weight: 600; margin-top: 3px; }
-.source-google { background: #E8F0FE; color: #1967D2; }
 .source-openlibrary { background: #E6F4EA; color: #188038; }
 .source-tpml { background: #FFF3E0; color: #E65100; }
 .series-suggestions { margin-top: 10px; padding: 10px; background: #FEF9E7; border-radius: 8px; border: 1px solid #F59E0B; }
@@ -366,7 +365,6 @@ tr.dragging { opacity: 0.4; }
       </div>
       <div class="search-type">
         <label class="radio-chip checked" id="chip-both"><input type="radio" name="searchType" value="both" checked onchange="updateChips(this)"> 全部</label>
-        <label class="radio-chip" id="chip-google"><input type="radio" name="searchType" value="google" onchange="updateChips(this)"> Google</label>
         <label class="radio-chip" id="chip-ol"><input type="radio" name="searchType" value="openlibrary" onchange="updateChips(this)"> Open Library</label>
         <label class="radio-chip" id="chip-tpml"><input type="radio" name="searchType" value="tpml" onchange="updateChips(this)"> 🏛️ 北市圖</label>
       </div>
@@ -441,7 +439,6 @@ tr.dragging { opacity: 0.4; }
   </div>
   <div class="mobile-search-type">
     <label class="radio-chip checked" id="mob-chip-both"><input type="radio" name="mobileSearchType" value="both" checked onchange="updateMobileChips(this)"> 全部</label>
-    <label class="radio-chip" id="mob-chip-google"><input type="radio" name="mobileSearchType" value="google" onchange="updateMobileChips(this)"> Google</label>
     <label class="radio-chip" id="mob-chip-ol"><input type="radio" name="mobileSearchType" value="openlibrary" onchange="updateMobileChips(this)"> Open Library</label>
     <label class="radio-chip" id="mob-chip-tpml"><input type="radio" name="mobileSearchType" value="tpml" onchange="updateMobileChips(this)"> 🏛️ 北市圖</label>
     <button class="btn btn-primary btn-sm" onclick="searchBooksMobile()">搜尋</button>
@@ -763,8 +760,8 @@ function selectMobileTargetTab(tab, el) {
 //  Search (Desktop)
 // ══════════════════════════════════════════════════════════════
 function updateChips(input) {
-  ['both','google','ol','tpml'].forEach(id => document.getElementById('chip-'+id)?.classList.remove('checked'));
-  const map={both:'both',google:'google',openlibrary:'ol',tpml:'tpml'};
+  ['both','ol','tpml'].forEach(id => document.getElementById('chip-'+id)?.classList.remove('checked'));
+  const map={both:'both',openlibrary:'ol',tpml:'tpml'};
   document.getElementById('chip-'+(map[input.value]||'both'))?.classList.add('checked');
 }
 
@@ -833,8 +830,8 @@ function openMobileSearch() {
 function closeMobileSearch() { document.getElementById('mobileSearchOverlay').style.display='none'; }
 
 function updateMobileChips(input) {
-  ['both','google','ol','tpml'].forEach(id => document.getElementById('mob-chip-'+id)?.classList.remove('checked'));
-  const map={both:'both',google:'google',openlibrary:'ol',tpml:'tpml'};
+  ['both','ol','tpml'].forEach(id => document.getElementById('mob-chip-'+id)?.classList.remove('checked'));
+  const map={both:'both',openlibrary:'ol',tpml:'tpml'};
   document.getElementById('mob-chip-'+(map[input.value]||'both'))?.classList.add('checked');
 }
 
@@ -900,20 +897,8 @@ async function doSearch(q, type) {
   const results = [];
   const zh = isChinese(q);
   try {
-    if (type==='both'||type==='google') {
-      // For Chinese queries: search with zh-TW first, then general
-      const googleResults = await searchGoogle(q, zh ? 'zh-TW' : '');
-      results.push(...googleResults);
-      // If Chinese and few results, also try without lang restriction
-      if (zh && googleResults.length < 3) {
-        const more = await searchGoogle(q, '');
-        more.forEach(b => {
-          if (!results.find(r => r.isbn13 && r.isbn13 === b.isbn13)) results.push(b);
-        });
-      }
-    }
     if (type==='both'||type==='openlibrary') {
-      // Open Library has poor Chinese coverage, only use for non-Chinese queries
+      // Open Library：中文書支援差，只用於英文查詢
       if (!zh) {
         (await searchOpenLibrary(q)).forEach(b => {
           const dup = results.find(r=>r.isbn13&&r.isbn13===b.isbn13);
@@ -931,26 +916,6 @@ function tpmlSearchUrl(q) {
   return `https://book.tpml.edu.tw/search?searchInput=${encodeURIComponent(q)}&searchField=FullText`;
 }
 
-async function searchGoogle(q, langRestrict='') {
-  const lang = langRestrict ? `&langRestrict=${langRestrict}` : '';
-  const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=10&printType=books${lang}`);
-  const data = await r.json();
-  return (data.items||[]).map(item => {
-    const info = item.volumeInfo||{};
-    const isbn13 = (info.industryIdentifiers||[]).find(x=>x.type==='ISBN_13')?.identifier||'';
-    // Prefer larger cover images
-    const imgLinks = info.imageLinks||{};
-    const coverUrl = (imgLinks.medium||imgLinks.small||imgLinks.thumbnail||'').replace('http://','https://');
-    // Try to get Lexile from description
-    let lexile = '';
-    const desc = (info.description||'') + ' ' + (info.categories||[]).join(' ');
-    const lm = desc.match(/(\d{3,4}L)/);
-    if (lm) lexile = lm[1];
-    return { title:info.title||'', series:'',
-      author:(info.authors||[]).join(' / '), publisher:info.publisher||'', isbn13,
-      pages:info.pageCount||'', lexile, coverUrl, source:'google' };
-  });
-}
 
 async function searchOpenLibrary(q) {
   const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=8&fields=key,title,author_name,publisher,number_of_pages_median,isbn,cover_i,series`);
