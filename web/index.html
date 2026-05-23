@@ -118,6 +118,7 @@ header .subtitle { font-size: 0.78rem; opacity: 0.85; }
 .result-source { display: inline-block; font-size: 0.68rem; padding: 1px 5px; border-radius: 4px; font-weight: 600; margin-top: 3px; }
 .source-google { background: #E8F0FE; color: #1967D2; }
 .source-openlibrary { background: #E6F4EA; color: #188038; }
+.source-tpml { background: #FFF3E0; color: #E65100; }
 .series-suggestions { margin-top: 10px; padding: 10px; background: #FEF9E7; border-radius: 8px; border: 1px solid #F59E0B; }
 .series-suggestions h4 { font-size: 0.8rem; color: #92400E; margin-bottom: 6px; }
 .series-book-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid #fde68a; font-size: 0.82rem; cursor: pointer; }
@@ -364,13 +365,14 @@ tr.dragging { opacity: 0.4; }
         <button class="btn btn-primary btn-sm" onclick="searchBooks()">搜尋</button>
       </div>
       <div class="search-type">
-        <label class="radio-chip checked" id="chip-both"><input type="radio" name="searchType" value="both" checked onchange="updateChips(this)"> 兩者</label>
+        <label class="radio-chip checked" id="chip-both"><input type="radio" name="searchType" value="both" checked onchange="updateChips(this)"> 全部</label>
         <label class="radio-chip" id="chip-google"><input type="radio" name="searchType" value="google" onchange="updateChips(this)"> Google</label>
         <label class="radio-chip" id="chip-ol"><input type="radio" name="searchType" value="openlibrary" onchange="updateChips(this)"> Open Library</label>
+        <label class="radio-chip" id="chip-tpml"><input type="radio" name="searchType" value="tpml" onchange="updateChips(this)"> 🏛️ 北市圖</label>
       </div>
     </div>
     <div class="search-results" id="searchResults">
-      <div class="empty-state"><div class="icon">🔎</div><p>輸入書名開始搜尋</p><br><button class="btn btn-sm" style="background:var(--bg);border:1.5px solid var(--border);color:var(--text-light);margin-top:4px;" onclick="openManualEntry()">✏️ 找不到？手動輸入</button></div>
+      <div class="empty-state"><div class="icon">🔎</div><p>輸入書名開始搜尋</p><button class="btn btn-sm" style="background:var(--bg);border:1.5px solid var(--border);color:var(--text-light);margin-top:8px;" onclick="openManualEntry()">✏️ 手動輸入書目</button></div>
     </div>
     <div class="add-form" id="addForm" style="display:none;">
       <h3>➕ 新增到書單</h3>
@@ -438,9 +440,10 @@ tr.dragging { opacity: 0.4; }
     <button class="mobile-search-close" onclick="closeMobileSearch()">✕</button>
   </div>
   <div class="mobile-search-type">
-    <label class="radio-chip checked" id="mob-chip-both"><input type="radio" name="mobileSearchType" value="both" checked onchange="updateMobileChips(this)"> 兩者</label>
+    <label class="radio-chip checked" id="mob-chip-both"><input type="radio" name="mobileSearchType" value="both" checked onchange="updateMobileChips(this)"> 全部</label>
     <label class="radio-chip" id="mob-chip-google"><input type="radio" name="mobileSearchType" value="google" onchange="updateMobileChips(this)"> Google</label>
     <label class="radio-chip" id="mob-chip-ol"><input type="radio" name="mobileSearchType" value="openlibrary" onchange="updateMobileChips(this)"> Open Library</label>
+    <label class="radio-chip" id="mob-chip-tpml"><input type="radio" name="mobileSearchType" value="tpml" onchange="updateMobileChips(this)"> 🏛️ 北市圖</label>
     <button class="btn btn-primary btn-sm" onclick="searchBooksMobile()">搜尋</button>
     <button class="btn btn-sm" style="background:var(--bg);border:1.5px solid var(--border);color:var(--text-light);" onclick="openManualEntry(true)">✏️ 手動</button>
   </div>
@@ -760,8 +763,8 @@ function selectMobileTargetTab(tab, el) {
 //  Search (Desktop)
 // ══════════════════════════════════════════════════════════════
 function updateChips(input) {
-  ['both','google','ol'].forEach(id => document.getElementById('chip-'+id)?.classList.remove('checked'));
-  const map={both:'both',google:'google',openlibrary:'ol'};
+  ['both','google','ol','tpml'].forEach(id => document.getElementById('chip-'+id)?.classList.remove('checked'));
+  const map={both:'both',google:'google',openlibrary:'ol',tpml:'tpml'};
   document.getElementById('chip-'+(map[input.value]||'both'))?.classList.add('checked');
 }
 
@@ -828,8 +831,8 @@ function openMobileSearch() {
 function closeMobileSearch() { document.getElementById('mobileSearchOverlay').style.display='none'; }
 
 function updateMobileChips(input) {
-  ['both','google','ol'].forEach(id => document.getElementById('mob-chip-'+id)?.classList.remove('checked'));
-  const map={both:'both',google:'google',openlibrary:'ol'};
+  ['both','google','ol','tpml'].forEach(id => document.getElementById('mob-chip-'+id)?.classList.remove('checked'));
+  const map={both:'both',google:'google',openlibrary:'ol',tpml:'tpml'};
   document.getElementById('mob-chip-'+(map[input.value]||'both'))?.classList.add('checked');
 }
 
@@ -915,8 +918,26 @@ async function doSearch(q, type) {
         });
       }
     }
+    if (type==='both'||type==='tpml') {
+      (await searchTpml(q)).forEach(b => {
+        // Merge with existing by ISBN, or add if new
+        const dup = b.isbn13 && results.find(r => r.isbn13 && r.isbn13 === b.isbn13);
+        if (!dup) results.push(b);
+        else dup.tpmlAvailable = true; // Mark as available in TPML
+      });
+    }
   } catch(e) { toast('搜尋失敗：'+e.message,'error'); }
   return results;
+}
+
+async function searchTpml(q) {
+  if (!API_URL) return [];
+  try {
+    const r = await fetch(`${API_URL}/api/tpml?q=${encodeURIComponent(q)}`);
+    if (!r.ok) return [];
+    const data = await r.json();
+    return (data.results || []).map(b => ({ ...b, source: 'tpml', coverUrl: '' }));
+  } catch(e) { return []; }
 }
 
 async function searchGoogle(q, langRestrict='') {
@@ -953,13 +974,15 @@ async function searchOpenLibrary(q) {
 
 function renderSearchResults(containerId, results, selectFn) {
   const prefix = containerId==='mobileSearchResults'?'mob-':'';
+  const isMobile = containerId==='mobileSearchResults';
+  const manualBtn = `<button class="btn btn-sm" style="background:var(--bg);border:1.5px solid var(--border);color:var(--text-light);margin-top:8px;" onclick="openManualEntry(${isMobile})">✏️ 手動輸入書目</button>`;
+
   if (!results.length) {
-    const manualBtn = containerId==='mobileSearchResults'
-      ? `<button class="btn btn-sm" style="background:var(--bg);border:1.5px solid var(--border);color:var(--text-light);margin-top:8px;" onclick="openManualEntry(true)">✏️ 手動輸入書目</button>`
-      : `<button class="btn btn-sm" style="background:var(--bg);border:1.5px solid var(--border);color:var(--text-light);margin-top:8px;" onclick="openManualEntry()">✏️ 手動輸入書目</button>`;
     document.getElementById(containerId).innerHTML=`<div class="empty-state"><div class="icon">😔</div><p>找不到相關書籍</p>${manualBtn}</div>`;
     return;
   }
+
+  const sourceLabel = s => s==='google' ? 'Google Books' : s==='openlibrary' ? 'Open Library' : s==='tpml' ? '🏛️ 北市圖' : s;
   document.getElementById(containerId).innerHTML = results.map((b,i)=>`
     <div class="search-result-item" id="${prefix}result-${i}" onclick="${selectFn}(${i})">
       ${b.coverUrl?`<img class="book-cover" src="${b.coverUrl}" onerror="this.style.display='none';this.nextSibling.style.display='flex'">
@@ -969,9 +992,11 @@ function renderSearchResults(containerId, results, selectFn) {
         <div class="result-title">${escHtml(b.title)}</div>
         <div class="result-author">${escHtml(b.author||'')}</div>
         <div class="result-meta">${b.publisher?escHtml(b.publisher)+' · ':''}${b.pages?formatPages(b.pages)+'頁 · ':''}${b.isbn13?'ISBN: '+b.isbn13:''}${b.lexile?' · <strong style="color:var(--accent)">Lexile: '+b.lexile+'</strong>':''}</div>
-        <span class="result-source source-${b.source}">${b.source==='google'?'Google Books':'Open Library'}</span>
+        <span class="result-source source-${b.source}">${sourceLabel(b.source)}</span>
+        ${b.tpmlAvailable?'<span class="result-source source-tpml" style="margin-left:4px;">🏛️ 北市圖有館藏</span>':''}
       </div>
-    </div>`).join('');
+    </div>`).join('')
+  + `<div style="padding:10px 0 4px;border-top:1px solid var(--border);margin-top:8px;text-align:center;">${manualBtn}</div>`;
 }
 
 async function showSeriesSuggestions(book, containerId, isMobile=false) {
