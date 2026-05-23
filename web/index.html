@@ -931,12 +931,56 @@ async function doSearch(q, type) {
 }
 
 async function searchTpml(q) {
-  if (!API_URL) return [];
+  // 直接從瀏覽器呼叫 TPML GraphQL（繞過 Worker，避免伺服器端 IP 封鎖）
+  const gqlUrl = 'https://book.tpml.edu.tw/api/HyLibWS/graphql';
   try {
-    const r = await fetch(`${API_URL}/api/tpml?q=${encodeURIComponent(q)}`);
-    if (!r.ok) return [];
-    const data = await r.json();
-    return (data.results || []).map(b => ({ ...b, source: 'tpml', coverUrl: '' }));
+    // Step 1: queryGrouping 取得 hyftdToken
+    const groupResp = await fetch(gqlUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        operationName: 'queryGrouping',
+        variables: {
+          searchForm: { searchField: ['FullText'], searchInput: [q], op: [], pageNo: 1, pageSize: 10 }
+        },
+        query: `query queryGrouping($searchForm: SearchForm) {
+          queryGrouping(searchForm: $searchForm) {
+            hyftdToken
+          }
+        }`
+      })
+    });
+    if (!groupResp.ok) return [];
+    const groupData = await groupResp.json();
+    const hyftdToken = groupData?.data?.queryGrouping?.hyftdToken;
+    if (!hyftdToken) return [];
+
+    // Step 2: searchSimpleList 取得書目列表
+    const listResp = await fetch(gqlUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        operationName: 'searchSimpleList',
+        variables: { hyftdToken, pageNo: 1, pageSize: 10 },
+        query: `query searchSimpleList($hyftdToken: Int, $pageNo: Int, $pageSize: Int) {
+          searchSimpleList(hyftdToken: $hyftdToken, pageNo: $pageNo, pageSize: $pageSize) {
+            total
+            list { id title author publisher publicationYear isbn coverImageUrl }
+          }
+        }`
+      })
+    });
+    if (!listResp.ok) return [];
+    const listData = await listResp.json();
+    const list = listData?.data?.searchSimpleList?.list || [];
+    return list.map(b => ({
+      title: b.title || '',
+      author: b.author || '',
+      publisher: b.publisher || '',
+      isbn13: (b.isbn || '').replace(/-/g, ''),
+      coverUrl: b.coverImageUrl || '',
+      source: 'tpml',
+    }));
   } catch(e) { return []; }
 }
 
